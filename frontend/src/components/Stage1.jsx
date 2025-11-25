@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { useTranslation } from '../i18n/LanguageContext';
 import './Stage1.css';
 
 export default function Stage1({ responses }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState(0);
 
   if (!responses || responses.length === 0) {
@@ -11,7 +13,7 @@ export default function Stage1({ responses }) {
 
   return (
     <div className="stage stage1">
-      <h3 className="stage-title">Stage 1: Individual Responses</h3>
+      <h3 className="stage-title">{t('stage1Title')}</h3>
 
       <div className="tabs">
         {responses.map((resp, index) => (

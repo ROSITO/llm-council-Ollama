@@ -41,15 +41,34 @@ async def query_model(
             response.raise_for_status()
 
             data = response.json()
+            
+            # Debug: log response structure if unexpected
+            if 'choices' not in data or len(data['choices']) == 0:
+                print(f"Unexpected response structure from {model}: {data}")
+                return None
+            
             message = data['choices'][0]['message']
+            content = message.get('content')
+            
+            # Check if content is None or empty
+            if content is None or (isinstance(content, str) and len(content.strip()) == 0):
+                print(f"Warning: Empty content from {model}. Full message: {message}")
+                return None
 
             return {
-                'content': message.get('content'),
+                'content': content,
                 'reasoning_details': message.get('reasoning_details')
             }
 
+    except httpx.HTTPStatusError as e:
+        error_detail = f"HTTP {e.response.status_code}: {e.response.text}"
+        print(f"Error querying model {model}: {error_detail}")
+        return None
     except Exception as e:
-        print(f"Error querying model {model}: {e}")
+        import traceback
+        error_detail = f"{type(e).__name__}: {str(e)}"
+        print(f"Error querying model {model}: {error_detail}")
+        print(f"Traceback: {traceback.format_exc()}")
         return None
 
 

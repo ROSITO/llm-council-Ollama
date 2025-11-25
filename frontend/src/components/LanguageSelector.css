@@ -1,0 +1,108 @@
+.language-selector {
+  position: relative;
+  z-index: 1000;
+}
+
+.language-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  min-width: 70px;
+}
+
+.language-button:hover {
+  background: #f0f0f0;
+  border-color: #4a90e2;
+}
+
+.language-flag {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.language-code {
+  font-weight: 600;
+  color: #333;
+  font-size: 12px;
+}
+
+.language-arrow {
+  font-size: 10px;
+  color: #666;
+  margin-left: auto;
+}
+
+.language-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  overflow: hidden;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.language-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+  transition: background 0.2s;
+}
+
+.language-option:last-child {
+  border-bottom: none;
+}
+
+.language-option:hover {
+  background: #f0f7ff;
+}
+
+.language-option.active {
+  background: #e8f4f8;
+  font-weight: 600;
+}
+
+.language-option.active:hover {
+  background: #d0e7ff;
+}
+
+.language-name {
+  flex: 1;
+  color: #333;
+}
+
+.language-check {
+  color: #4a90e2;
+  font-weight: bold;
+  font-size: 16px;
+}
+

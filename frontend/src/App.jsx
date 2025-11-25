@@ -1,14 +1,20 @@
 import { useState, useEffect } from 'react';
+import { LanguageProvider, useTranslation } from './i18n/LanguageContext';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
+import ConfigurationPanel from './components/ConfigurationPanel';
+import LanguageSelector from './components/LanguageSelector';
 import { api } from './api';
 import './App.css';
 
-function App() {
+function AppContent() {
+  const { t } = useTranslation();
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
+  const [currentConfig, setCurrentConfig] = useState(null);
 
   // Load conversations on mount
   useEffect(() => {
@@ -74,11 +80,13 @@ function App() {
         role: 'assistant',
         stage1: null,
         stage2: null,
+        stage2_5: null,
         stage3: null,
         metadata: null,
         loading: {
           stage1: false,
           stage2: false,
+          stage2_5: false,
           stage3: false,
         },
       };
@@ -127,6 +135,25 @@ function App() {
               lastMsg.stage2 = event.data;
               lastMsg.metadata = event.metadata;
               lastMsg.loading.stage2 = false;
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage2_5_start':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.loading.stage2_5 = true;
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage2_5_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.stage2_5 = event.data;
+              lastMsg.loading.stage2_5 = false;
               return { ...prev, messages };
             });
             break;
@@ -183,18 +210,48 @@ function App() {
 
   return (
     <div className="app">
+      <div className="app-header">
+        <LanguageSelector />
+      </div>
       <Sidebar
         conversations={conversations}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
+        onShowConfig={() => setShowConfig(true)}
       />
-      <ChatInterface
-        conversation={currentConversation}
-        onSendMessage={handleSendMessage}
-        isLoading={isLoading}
-      />
+      {showConfig ? (
+        <div className="config-view">
+          <div className="config-header">
+            <h2>{t('configuration')}</h2>
+            <button onClick={() => setShowConfig(false)} className="close-btn">
+              ✕ {t('close')}
+            </button>
+          </div>
+          <ConfigurationPanel
+            onConfigChange={(config) => {
+              setCurrentConfig(config);
+              setShowConfig(false);
+            }}
+          />
+        </div>
+      ) : (
+        <ChatInterface
+          conversation={currentConversation}
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+          currentConfig={currentConfig}
+        />
+      )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
   );
 }
 

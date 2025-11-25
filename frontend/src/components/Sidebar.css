@@ -18,6 +18,24 @@
   color: #333;
 }
 
+.config-btn {
+  width: 100%;
+  padding: 12px;
+  margin-top: 12px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.config-btn:hover {
+  background: #5a6268;
+}
+
 .new-conversation-btn {
   width: 100%;
   padding: 10px;

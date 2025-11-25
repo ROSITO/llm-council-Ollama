@@ -1,0 +1,213 @@
+.configuration-panel {
+  background: #f8f9fa;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px;
+  max-width: 800px;
+}
+
+.configuration-panel h3 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.config-section {
+  margin-bottom: 24px;
+}
+
+.config-section label {
+  display: block;
+  margin-bottom: 8px;
+  color: #555;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.provider-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.provider-buttons button {
+  padding: 10px 20px;
+  border: 2px solid #d0d0d0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #666;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.provider-buttons button:hover:not(:disabled) {
+  border-color: #4a90e2;
+  color: #4a90e2;
+  background: #f0f7ff;
+}
+
+.provider-buttons button.active {
+  border-color: #4a90e2;
+  background: #4a90e2;
+  color: #ffffff;
+}
+
+.provider-buttons button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-btn {
+  margin-left: 12px;
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+
+.models-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+}
+
+.model-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.model-checkbox:hover {
+  background: #f0f7ff;
+}
+
+.model-checkbox input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.model-checkbox span {
+  font-size: 13px;
+  font-family: monospace;
+  color: #333;
+}
+
+.no-models {
+  padding: 16px;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  color: #856404;
+  font-size: 13px;
+}
+
+.config-section input[type="number"] {
+  margin-left: 12px;
+  padding: 6px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 14px;
+  width: 80px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.help-text {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+.config-actions {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 2px solid #e0e0e0;
+}
+
+.apply-btn {
+  padding: 12px 24px;
+  background: #4a90e2;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.apply-btn:hover:not(:disabled) {
+  background: #357abd;
+}
+
+.apply-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selection-summary {
+  margin-top: 16px;
+  padding: 12px;
+  background: #e8f4f8;
+  border: 1px solid #b3d9e6;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #2c5f7d;
+}
+
+.loading {
+  padding: 12px;
+  color: #666;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.error {
+  padding: 12px;
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 8px;
+  color: #c33;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.success {
+  padding: 12px;
+  background: #efe;
+  border: 1px solid #cfc;
+  border-radius: 8px;
+  color: #3c3;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+

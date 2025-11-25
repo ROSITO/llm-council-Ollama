@@ -10,9 +10,21 @@ import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage2_5_debate, stage3_synthesize_final, calculate_aggregate_rankings
+from .providers import OpenRouterProvider, OllamaProvider, get_provider, set_provider
+from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
+import random
 
 app = FastAPI(title="LLM Council API")
+
+# Initialize default provider (OpenRouter if key available, otherwise Ollama)
+# This will be overridden when user sets config via /api/config/set
+@app.on_event("startup")
+async def startup_event():
+    if OPENROUTER_API_KEY:
+        set_provider(OpenRouterProvider(OPENROUTER_API_KEY, OPENROUTER_API_URL))
+    else:
+        set_provider(OllamaProvider())
 
 # Enable CORS for local development
 app.add_middleware(
@@ -42,6 +54,22 @@ class ConversationMetadata(BaseModel):
     message_count: int
 
 
+class CouncilConfig(BaseModel):
+    """Configuration for the LLM Council."""
+    provider: str  # "openrouter" or "ollama"
+    models: List[str]  # List of model names
+    num_models: int  # Number of models to use (will select randomly if more provided)
+    chairman_random: bool = True  # If True, select chairman randomly from models
+
+
+class SetConfigRequest(BaseModel):
+    """Request to set council configuration."""
+    provider: str
+    models: List[str]
+    num_models: int
+    chairman_random: bool = True
+
+
 class Conversation(BaseModel):
     """Full conversation with all messages."""
     id: str
@@ -54,6 +82,108 @@ class Conversation(BaseModel):
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "service": "LLM Council API"}
+
+
+@app.get("/api/config/models")
+async def list_models(provider: str = "auto"):
+    """
+    List available models for a provider.
+    
+    Args:
+        provider: "openrouter", "ollama", or "auto" (detect available)
+    """
+    if provider == "auto":
+        # Try Ollama first, then OpenRouter
+        ollama = OllamaProvider()
+        if await ollama.is_available():
+            models = await ollama.list_available_models()
+            return {"provider": "ollama", "models": models, "available": True}
+        elif OPENROUTER_API_KEY:
+            openrouter = OpenRouterProvider(OPENROUTER_API_KEY, OPENROUTER_API_URL)
+            models = await openrouter.list_available_models()
+            return {"provider": "openrouter", "models": models, "available": True}
+        else:
+            return {"provider": None, "models": [], "available": False}
+    elif provider == "ollama":
+        ollama = OllamaProvider()
+        available = await ollama.is_available()
+        models = await ollama.list_available_models() if available else []
+        return {"provider": "ollama", "models": models, "available": available}
+    elif provider == "openrouter":
+        if not OPENROUTER_API_KEY:
+            return {"provider": "openrouter", "models": [], "available": False}
+        openrouter = OpenRouterProvider(OPENROUTER_API_KEY, OPENROUTER_API_URL)
+        models = await openrouter.list_available_models()
+        return {"provider": "openrouter", "models": models, "available": True}
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+
+
+@app.post("/api/config/set")
+async def set_config(request: SetConfigRequest):
+    """
+    Set the council configuration and switch provider.
+    
+    Args:
+        request: Configuration including provider, models, and num_models
+    """
+    from .council import set_council_config
+    
+    # Select models (randomly if more than num_models)
+    selected_models = request.models.copy()
+    if len(selected_models) > request.num_models:
+        selected_models = random.sample(selected_models, request.num_models)
+    
+    # Switch provider
+    if request.provider == "openrouter":
+        if not OPENROUTER_API_KEY:
+            raise HTTPException(status_code=400, detail="OpenRouter API key not configured")
+        set_provider(OpenRouterProvider(OPENROUTER_API_KEY, OPENROUTER_API_URL))
+    elif request.provider == "ollama":
+        ollama = OllamaProvider()
+        if not await ollama.is_available():
+            raise HTTPException(status_code=400, detail="Ollama is not available. Is it running?")
+        set_provider(ollama)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {request.provider}")
+    
+    # Select chairman
+    if request.chairman_random:
+        chairman = random.choice(selected_models) if selected_models else None
+    else:
+        chairman = selected_models[0] if selected_models else None
+    
+    # Set the council configuration
+    if selected_models and chairman:
+        set_council_config(selected_models, chairman)
+    
+    # Store config in a simple way (could be improved with proper storage)
+    config = {
+        "provider": request.provider,
+        "models": selected_models,
+        "chairman": chairman,
+        "num_models": len(selected_models)
+    }
+    
+    return {
+        "status": "ok",
+        "config": config,
+        "message": f"Configured {len(selected_models)} models from {request.provider}"
+    }
+
+
+@app.get("/api/config/current")
+async def get_current_config():
+    """Get current configuration."""
+    provider = get_provider()
+    provider_name = "openrouter" if isinstance(provider, OpenRouterProvider) else "ollama"
+    models = await provider.list_available_models()
+    
+    return {
+        "provider": provider_name,
+        "available_models": models,
+        "available": await provider.is_available()
+    }
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
@@ -101,8 +231,9 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         title = await generate_conversation_title(request.content)
         storage.update_conversation_title(conversation_id, title)
 
-    # Run the 3-stage council process
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
+    # Run the 3-stage council process (now with debate)
+    # Configuration should be set via /api/config/set before sending messages
+    stage1_results, stage2_results, stage2_5_debate, stage3_result, metadata = await run_full_council(
         request.content
     )
 
@@ -111,6 +242,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         conversation_id,
         stage1_results,
         stage2_results,
+        stage2_5_debate,
         stage3_result
     )
 
@@ -118,6 +250,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     return {
         "stage1": stage1_results,
         "stage2": stage2_results,
+        "stage2_5": stage2_5_debate,
         "stage3": stage3_result,
         "metadata": metadata
     }
@@ -158,9 +291,16 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
             yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
+            # Stage 2.5: Debate
+            from .council import stage2_5_debate
+            yield f"data: {json.dumps({'type': 'stage2_5_start'})}\n\n"
+            debate_rounds = await stage2_5_debate(request.content, stage1_results, stage2_results, num_tours=2)
+            yield f"data: {json.dumps({'type': 'stage2_5_complete', 'data': debate_rounds})}\n\n"
+
             # Stage 3: Synthesize final answer
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
+            from .council import stage3_synthesize_final
+            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results, debate_rounds)
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
 
             # Wait for title generation if it was started
@@ -174,6 +314,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 conversation_id,
                 stage1_results,
                 stage2_results,
+                debate_rounds,
                 stage3_result
             )
 

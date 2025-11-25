@@ -112,4 +112,48 @@ export const api = {
       }
     }
   },
+
+  /**
+   * List available models for a provider.
+   */
+  async listModels(provider = 'auto') {
+    const response = await fetch(`${API_BASE}/api/config/models?provider=${provider}`);
+    if (!response.ok) {
+      throw new Error('Failed to list models');
+    }
+    return response.json();
+  },
+
+  /**
+   * Set council configuration.
+   */
+  async setConfig(provider, models, numModels, chairmanRandom = true) {
+    const response = await fetch(`${API_BASE}/api/config/set`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider,
+        models,
+        num_models: numModels,
+        chairman_random: chairmanRandom,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to set config');
+    }
+    return response.json();
+  },
+
+  /**
+   * Get current configuration.
+   */
+  async getCurrentConfig() {
+    const response = await fetch(`${API_BASE}/api/config/current`);
+    if (!response.ok) {
+      throw new Error('Failed to get config');
+    }
+    return response.json();
+  },
 };

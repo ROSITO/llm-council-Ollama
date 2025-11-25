@@ -1,8 +1,40 @@
 """3-stage LLM Council orchestration."""
 
-from typing import List, Dict, Any, Tuple
-from .openrouter import query_models_parallel, query_model
+from typing import List, Dict, Any, Tuple, Optional
+from .providers import query_models_parallel, query_model, get_provider
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+
+# Dynamic configuration (can be overridden per request)
+_dynamic_config: Optional[Dict[str, Any]] = None
+
+
+def set_council_config(models: List[str], chairman: str):
+    """
+    Set dynamic council configuration.
+    
+    Args:
+        models: List of model names to use
+        chairman: Chairman model name
+    """
+    global _dynamic_config
+    _dynamic_config = {
+        "models": models,
+        "chairman": chairman
+    }
+
+
+def get_council_models() -> List[str]:
+    """Get the list of council models (dynamic or default)."""
+    if _dynamic_config:
+        return _dynamic_config["models"]
+    return COUNCIL_MODELS
+
+
+def get_chairman_model() -> str:
+    """Get the chairman model (dynamic or default)."""
+    if _dynamic_config:
+        return _dynamic_config["chairman"]
+    return CHAIRMAN_MODEL
 
 
 async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
@@ -18,7 +50,8 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     messages = [{"role": "user", "content": user_query}]
 
     # Query all models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    council_models = get_council_models()
+    responses = await query_models_parallel(council_models, messages)
 
     # Format results
     stage1_results = []
@@ -95,7 +128,8 @@ Now provide your evaluation and ranking:"""
     messages = [{"role": "user", "content": ranking_prompt}]
 
     # Get rankings from all council models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    council_models = get_council_models()
+    responses = await query_models_parallel(council_models, messages)
 
     # Format results
     stage2_results = []
@@ -112,10 +146,133 @@ Now provide your evaluation and ranking:"""
     return stage2_results, label_to_model
 
 
+async def stage2_5_debate(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+    num_tours: int = 2
+) -> List[Dict[str, Any]]:
+    """
+    Stage 2.5: Debate phase where LLMs can react to each other's responses and evaluations.
+    
+    Args:
+        user_query: The original user query
+        stage1_results: Individual model responses from Stage 1
+        stage2_results: Rankings from Stage 2
+        num_tours: Number of debate rounds (default: 2)
+    
+    Returns:
+        List of debate rounds, each containing responses from all models
+    """
+    debate_rounds = []
+    
+    # Build context for debate
+    stage1_text = "\n\n".join([
+        f"**{result['model']}** said:\n{result['response']}"
+        for result in stage1_results
+    ])
+    
+    stage2_text = "\n\n".join([
+        f"**{result['model']}** evaluated and ranked the responses:\n{result['ranking']}"
+        for result in stage2_results
+    ])
+    
+    # Track debate history for each model
+    debate_history = {result['model']: [] for result in stage1_results}
+    
+    for tour_num in range(1, num_tours + 1):
+        print(f"Stage 2.5: Starting debate tour {tour_num}/{num_tours}")
+        
+        # Build debate prompt for this tour
+        if tour_num == 1:
+            # First tour: initial reactions
+            debate_prompt = f"""You are participating in a debate about the following question:
+
+**Original Question:** {user_query}
+
+**Initial Responses (Stage 1):**
+{stage1_text}
+
+**Peer Evaluations (Stage 2):**
+{stage2_text}
+
+**Your Task:**
+This is the first round of debate. You can:
+- Defend or clarify your initial response
+- Respond to criticisms from the evaluations
+- Point out strengths or weaknesses in other responses
+- Refine or expand on your position based on the discussion
+
+Provide your contribution to this debate round:"""
+        else:
+            # Subsequent tours: reactions to previous debate
+            previous_tour_text = "\n\n".join([
+                f"**{resp['model']}** said:\n{resp['response']}"
+                for resp in debate_rounds[-1]['responses']
+            ])
+            
+            debate_prompt = f"""You are participating in a debate about the following question:
+
+**Original Question:** {user_query}
+
+**Initial Responses (Stage 1):**
+{stage1_text}
+
+**Peer Evaluations (Stage 2):**
+{stage2_text}
+
+**Previous Debate Round {tour_num - 1}:**
+{previous_tour_text}
+
+**Your Task:**
+This is round {tour_num} of the debate. You can:
+- Respond to points raised by other models in the previous round
+- Defend your position against new criticisms
+- Acknowledge valid points from others
+- Refine your argument further
+
+Provide your contribution to this debate round:"""
+        
+        messages = [{"role": "user", "content": debate_prompt}]
+        
+        # Get debate responses from all models in parallel
+        debate_responses = await query_models_parallel(
+            [result['model'] for result in stage1_results],
+            messages
+        )
+        
+        # Format results for this tour
+        tour_responses = []
+        for result in stage1_results:
+            model = result['model']
+            response = debate_responses.get(model)
+            
+            if response is not None:
+                content = response.get('content', '')
+                tour_responses.append({
+                    "model": model,
+                    "response": content
+                })
+                # Track history for this model
+                debate_history[model].append(content)
+            else:
+                # If model failed, use a placeholder or skip
+                print(f"Warning: {model} failed to respond in debate tour {tour_num}")
+        
+        if tour_responses:
+            debate_rounds.append({
+                "tour": tour_num,
+                "responses": tour_responses
+            })
+    
+    return debate_rounds
+
+
 async def stage3_synthesize_final(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
-    stage2_results: List[Dict[str, Any]]
+    stage2_results: List[Dict[str, Any]],
+    stage2_5_debate: List[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Stage 3: Chairman synthesizes final response.
@@ -138,8 +295,69 @@ async def stage3_synthesize_final(
         f"Model: {result['model']}\nRanking: {result['ranking']}"
         for result in stage2_results
     ])
+    
+    # Include debate if available
+    debate_text = ""
+    if stage2_5_debate and len(stage2_5_debate) > 0:
+        debate_rounds_text = []
+        for round_data in stage2_5_debate:
+            round_num = round_data['tour']
+            round_responses = "\n\n".join([
+                f"**{resp['model']}**: {resp['response']}"
+                for resp in round_data['responses']
+            ])
+            debate_rounds_text.append(f"Round {round_num}:\n{round_responses}")
+        debate_text = "\n\n".join(debate_rounds_text)
 
-    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
+    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, ranked each other's responses, and engaged in a debate.
+
+Original Question: {user_query}
+
+STAGE 1 - Individual Responses:
+{stage1_text}
+
+STAGE 2 - Peer Rankings:
+{stage2_text}"""
+    
+    if debate_text:
+        chairman_prompt += f"""
+
+STAGE 2.5 - Debate:
+{debate_text}"""
+    
+    chairman_prompt += """
+
+Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
+- The individual responses and their insights
+- The peer rankings and what they reveal about response quality
+- The debate discussions and how positions evolved
+- Any patterns of agreement or disagreement
+- The final consensus or key disagreements
+
+Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
+
+    messages = [{"role": "user", "content": chairman_prompt}]
+
+    # Log prompt size for debugging
+    chairman_model = get_chairman_model()
+    prompt_size = len(chairman_prompt)
+    print(f"Stage 3: Querying {chairman_model} with prompt size: {prompt_size} characters")
+    
+    # If prompt is too long, truncate stage1 and stage2 text
+    MAX_PROMPT_SIZE = 100000  # ~100k chars should be safe for most models
+    if prompt_size > MAX_PROMPT_SIZE:
+        print(f"Warning: Prompt too long ({prompt_size} chars), truncating...")
+        # Truncate each response to max length
+        max_per_response = MAX_PROMPT_SIZE // (len(stage1_results) + len(stage2_results) + 10)
+        stage1_text = "\n\n".join([
+            f"Model: {result['model']}\nResponse: {result['response'][:max_per_response]}..."
+            for result in stage1_results
+        ])
+        stage2_text = "\n\n".join([
+            f"Model: {result['model']}\nRanking: {result['ranking'][:max_per_response]}..."
+            for result in stage2_results
+        ])
+        chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
 
 Original Question: {user_query}
 
@@ -155,21 +373,51 @@ Your task as Chairman is to synthesize all of this information into a single, co
 - Any patterns of agreement or disagreement
 
 Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
+        messages = [{"role": "user", "content": chairman_prompt}]
 
-    messages = [{"role": "user", "content": chairman_prompt}]
-
-    # Query the chairman model
-    response = await query_model(CHAIRMAN_MODEL, messages)
+    # Query the chairman model with longer timeout (synthesis can take time)
+    chairman_model = get_chairman_model()
+    response = await query_model(chairman_model, messages, timeout=180.0)
 
     if response is None:
-        # Fallback if chairman fails
-        return {
-            "model": CHAIRMAN_MODEL,
-            "response": "Error: Unable to generate final synthesis."
+        # Fallback: Use the best response from stage 1 based on aggregate rankings
+        print(f"Stage 3: Failed to get response from {chairman_model}, using fallback")
+        
+        # Create label_to_model mapping for fallback
+        labels = [chr(65 + i) for i in range(len(stage1_results))]
+        label_to_model = {
+            f"Response {label}": result['model']
+            for label, result in zip(labels, stage1_results)
         }
+        
+        # Calculate aggregate rankings
+        aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+        
+        # Use the top-ranked response as fallback
+        if aggregate_rankings and len(aggregate_rankings) > 0:
+            best_model = aggregate_rankings[0]['model']
+            best_response = next(
+                (r['response'] for r in stage1_results if r['model'] == best_model),
+                stage1_results[0]['response'] if stage1_results else "No response available"
+            )
+            return {
+                "model": f"{chairman_model} (fallback: {best_model})",
+                "response": f"[Note: Chairman synthesis failed, using top-ranked response from {best_model}]\n\n{best_response}"
+            }
+        elif stage1_results:
+            # If no rankings available, use first response
+            return {
+                "model": f"{chairman_model} (fallback)",
+                "response": f"[Note: Chairman synthesis failed, using first available response]\n\n{stage1_results[0]['response']}"
+            }
+        else:
+            return {
+                "model": chairman_model,
+                "response": "Error: Unable to generate final synthesis."
+            }
 
     return {
-        "model": CHAIRMAN_MODEL,
+        "model": chairman_model,
         "response": response.get('content', '')
     }
 
@@ -274,8 +522,11 @@ Title:"""
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    # Use gemini-2.5-flash for title generation (fast and cheap)
-    response = await query_model("google/gemini-2.5-flash", messages, timeout=30.0)
+    # Use a lightweight model for title generation
+    # Try to use a small model from current provider, fallback to first available
+    council_models = get_council_models()
+    title_model = council_models[0] if council_models else "llama3"
+    response = await query_model(title_model, messages, timeout=30.0)
 
     if response is None:
         # Fallback to a generic title
@@ -301,7 +552,7 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
         user_query: The user's question
 
     Returns:
-        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
+        Tuple of (stage1_results, stage2_results, stage2_5_debate, stage3_result, metadata)
     """
     # Stage 1: Collect individual responses
     stage1_results = await stage1_collect_responses(user_query)
@@ -313,17 +564,29 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
             "response": "All models failed to respond. Please try again."
         }, {}
 
-    # Stage 2: Collect rankings
-    stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
+    # Stage 2: Collect rankings (only if we have responses)
+    stage2_results = []
+    label_to_model = {}
+    if stage1_results:
+        stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
 
     # Calculate aggregate rankings
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+    # Stage 2.5: Debate (optional, can be disabled)
+    debate_rounds = await stage2_5_debate(
+        user_query,
+        stage1_results,
+        stage2_results,
+        num_tours=2  # 2 rounds of debate
+    )
 
     # Stage 3: Synthesize final answer
     stage3_result = await stage3_synthesize_final(
         user_query,
         stage1_results,
-        stage2_results
+        stage2_results,
+        debate_rounds
     )
 
     # Prepare metadata
@@ -332,4 +595,4 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
         "aggregate_rankings": aggregate_rankings
     }
 
-    return stage1_results, stage2_results, stage3_result, metadata
+    return stage1_results, stage2_results, debate_rounds, stage3_result, metadata
