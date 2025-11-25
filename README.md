@@ -69,7 +69,18 @@ npm install
 cd ..
 ```
 
-### 2. Configure API Keys
+### 2. Install Ollama (Required for Local Models)
+
+**Ollama must be installed separately** to use local models. This is a system-level dependency, not a Python package.
+
+- **Installation**: See the official repository: [github.com/ollama/ollama](https://github.com/ollama/ollama)
+- **Quick install**: `curl -fsSL https://ollama.ai/install.sh | sh`
+- **Verify**: `ollama --version`
+- **Start service**: `ollama serve` (usually runs automatically)
+
+If you only plan to use OpenRouter (cloud models), you can skip this step.
+
+### 3. Configure API Keys
 
 Create a `.env` file in the project root:
 
@@ -80,20 +91,38 @@ OPENROUTER_API_KEY=sk-or-v1-...
 
 Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
 
+**Note**: You can use either OpenRouter OR Ollama, or both. The application will auto-detect which is available.
+
 **For Ollama (Local):**
 ```bash
 # No API key needed!
 # Just make sure Ollama is installed and running
 ```
 
-Install Ollama from [ollama.ai](https://ollama.ai/) and download models:
+**Installation d'Ollama** (requis pour utiliser le provider Ollama) :
+
+Ollama doit être installé et démarré pour utiliser les modèles locaux. Consultez le dépôt officiel : [github.com/ollama/ollama](https://github.com/ollama/ollama)
+
+**Installation rapide** :
+- **macOS/Linux** : `curl -fsSL https://ollama.ai/install.sh | sh`
+- **Windows** : Téléchargez depuis [ollama.ai](https://ollama.ai/)
+- **Docker** : `docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama`
+
+**Vérification** :
+```bash
+ollama --version  # Vérifier l'installation
+ollama serve      # Démarrer le service (si pas déjà démarré)
+```
+
+**Télécharger des modèles** :
 ```bash
 ollama pull llama3
 ollama pull mistral
-# etc.
+ollama pull codellama
+# Voir la liste : ollama list
 ```
 
-### 3. Configure Models (Optional)
+### 4. Configure Models (Optional)
 
 You can configure models in two ways:
 
@@ -178,11 +207,13 @@ Your language preference is automatically saved.
 
 ## Tech Stack
 
-- **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API, Ollama API
+- **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API, [Ollama API](https://github.com/ollama/ollama)
 - **Frontend:** React + Vite, react-markdown for rendering, i18n support
 - **Storage:** JSON files in `data/conversations/`
 - **Package Management:** uv for Python, npm for JavaScript
-- **Providers:** OpenRouter (cloud), Ollama (local)
+- **Providers:** 
+  - OpenRouter (cloud) - Requires API key
+  - [Ollama](https://github.com/ollama/ollama) (local) - **Must be installed separately**
 
 ## Architecture
 
@@ -223,9 +254,11 @@ This fork adds several enhancements:
 ## Troubleshooting
 
 ### Ollama Not Working
+- **Ollama must be installed first** - See [github.com/ollama/ollama](https://github.com/ollama/ollama) for installation instructions
 - Make sure Ollama is running: `ollama serve`
 - Check models are downloaded: `ollama list`
 - Verify API is accessible: `curl http://localhost:11434/api/tags`
+- If Ollama is not installed, the application will fall back to OpenRouter (if API key is configured)
 
 ### OpenRouter Not Working
 - Verify API key in `.env` file
